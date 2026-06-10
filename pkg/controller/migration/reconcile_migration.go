@@ -55,12 +55,12 @@ func (r *ReconcileMigration) reconcileMigration(ctx context.Context, migration *
 	// update the status to applied
 	migration.Status.ExecutedAt = time.Now().Unix()
 	migration.Status.Phase = schemasv1alpha4.Executed
-	err = r.Update(context.Background(), migration)
+	err = r.Update(ctx, migration)
 
 	if err != nil {
 		if kuberneteserrors.IsConflict(err) {
 			updatedMigration := &schemasv1alpha4.Migration{}
-			err := r.Get(context.Background(), types.NamespacedName{
+			err := r.Get(ctx, types.NamespacedName{
 				Name:      migration.Name,
 				Namespace: migration.Namespace,
 			}, updatedMigration)
@@ -69,8 +69,8 @@ func (r *ReconcileMigration) reconcileMigration(ctx context.Context, migration *
 			}
 
 			updatedMigration.Status.ExecutedAt = time.Now().Unix()
-			migration.Status.Phase = schemasv1alpha4.Executed
-			if err := r.Update(context.Background(), updatedMigration); err != nil {
+			updatedMigration.Status.Phase = schemasv1alpha4.Executed
+			if err := r.Update(ctx, updatedMigration); err != nil {
 				return reconcile.Result{}, errors.Wrap(err, "failed to update")
 			}
 		} else {
@@ -82,10 +82,17 @@ func (r *ReconcileMigration) reconcileMigration(ctx context.Context, migration *
 }
 
 func shouldApplyMigration(migration *schemasv1alpha4.Migration) bool {
-	if migration.Status.ApprovedAt > 0 && migration.Status.ExecutedAt == 0 {
+	if migration.Status.ApprovedAt > 0 && migration.Status.ExecutedAt == 0 && approvedPlanHashMatches(migration) {
 		return true
 	}
 	return false
+}
+
+func approvedPlanHashMatches(migration *schemasv1alpha4.Migration) bool {
+	if migration.Status.PlanHash == "" {
+		return true
+	}
+	return migration.Status.ApprovedPlanHash == migration.Status.PlanHash
 }
 
 func getDatabaseFromMigration(ctx context.Context, migration *schemasv1alpha4.Migration) (*databasesv1alpha4.Database, error) {
